@@ -4,6 +4,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 class AIService {
   AIService() {
     OpenAI.apiKey = dotenv.env['OPENAI_API_KEY']!;
+    OpenAI.baseUrl = dotenv.env['OPENAI_BASE_URL']!;
   }
 
   Future<String> summarizeText(String text) async {
@@ -27,7 +28,7 @@ class AIService {
       );
 
       final completion = await OpenAI.instance.chat.create(
-        model: "gpt-3.5-turbo",
+        model: "Qwen2-1.5B-Instruct",
         messages: [systemMessage, userMessage],
       );
 

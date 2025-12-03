@@ -1,25 +1,72 @@
-import 'package:google_generative_ai/google_generative_ai.dart';
+import 'package:dart_openai/dart_openai.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 class AIService {
-  // TODO: Replace with a secure way to handle API keys or prompt user
-  static const String _apiKey = 'YOUR_API_KEY';
-  late final GenerativeModel _model;
-
   AIService() {
-    _model = GenerativeModel(model: 'gemini-pro', apiKey: _apiKey);
+    OpenAI.apiKey = dotenv.env['OPENAI_API_KEY']!;
   }
 
   Future<String> summarizeText(String text) async {
-    final content = [Content.text('Summarize the following text:\n\n$text')];
-    final response = await _model.generateContent(content);
-    return response.text ?? 'Unable to generate summary.';
+    try {
+      final systemMessage = OpenAIChatCompletionChoiceMessageModel(
+        content: [
+          OpenAIChatCompletionChoiceMessageContentItemModel.text(
+            "You are a helpful assistant that summarizes text.",
+          ),
+        ],
+        role: OpenAIChatMessageRole.system,
+      );
+
+      final userMessage = OpenAIChatCompletionChoiceMessageModel(
+        content: [
+          OpenAIChatCompletionChoiceMessageContentItemModel.text(
+            "Summarize the following text:\n\n$text",
+          ),
+        ],
+        role: OpenAIChatMessageRole.user,
+      );
+
+      final completion = await OpenAI.instance.chat.create(
+        model: "gpt-3.5-turbo",
+        messages: [systemMessage, userMessage],
+      );
+
+      return completion.choices.first.message.content?.first.text ??
+          'Unable to generate summary.';
+    } catch (e) {
+      return 'Error: $e';
+    }
   }
 
   Future<String> translateText(String text, String targetLanguage) async {
-    final content = [
-      Content.text('Translate the following text to $targetLanguage:\n\n$text'),
-    ];
-    final response = await _model.generateContent(content);
-    return response.text ?? 'Unable to translate text.';
+    try {
+      final systemMessage = OpenAIChatCompletionChoiceMessageModel(
+        content: [
+          OpenAIChatCompletionChoiceMessageContentItemModel.text(
+            "You are a helpful assistant that translates text.",
+          ),
+        ],
+        role: OpenAIChatMessageRole.system,
+      );
+
+      final userMessage = OpenAIChatCompletionChoiceMessageModel(
+        content: [
+          OpenAIChatCompletionChoiceMessageContentItemModel.text(
+            "Translate the following text to $targetLanguage:\n\n$text",
+          ),
+        ],
+        role: OpenAIChatMessageRole.user,
+      );
+
+      final completion = await OpenAI.instance.chat.create(
+        model: "gpt-3.5-turbo",
+        messages: [systemMessage, userMessage],
+      );
+
+      return completion.choices.first.message.content?.first.text ??
+          'Unable to translate text.';
+    } catch (e) {
+      return 'Error: $e';
+    }
   }
 }

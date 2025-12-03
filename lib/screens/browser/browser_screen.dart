@@ -5,6 +5,7 @@ import 'package:magtapp/bloc/browser_bloc.dart';
 import 'package:magtapp/bloc/browser_event.dart';
 import 'package:magtapp/bloc/browser_state.dart';
 import 'package:magtapp/screens/browser/browser_tabs_screen.dart';
+import 'package:magtapp/widgets/ai_assistant_widget.dart';
 
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
@@ -77,6 +78,41 @@ class _BrowserScreenState extends State<BrowserScreen> {
             actions: [
               if (activeTab != null)
                 IconButton(
+                  icon: const Icon(Icons.auto_awesome),
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => AIAssistantWidget(
+                        currentUrl: activeTab.url,
+                        onGetPageContent: () async {
+                          if (activeTab.controller != null) {
+                            final result = await activeTab.controller!
+                                .runJavaScriptReturningResult(
+                                  'document.body.innerText',
+                                );
+                            // Result is usually a JSON string, so we might need to unquote it
+                            // But for simple text extraction, toString() might suffice or need jsonDecode
+                            // runJavaScriptReturningResult returns "string content" (quoted)
+                            String text = result.toString();
+                            if (text.startsWith('"') && text.endsWith('"')) {
+                              text = text.substring(1, text.length - 1);
+                            }
+                            // Unescape newlines and other chars if needed, but basic cleanup:
+                            text = text
+                                .replaceAll('\\n', '\n')
+                                .replaceAll('\\"', '"');
+                            return text;
+                          }
+                          return '';
+                        },
+                      ),
+                    );
+                  },
+                ),
+              if (activeTab != null)
+                IconButton(
                   icon: const Icon(Icons.refresh),
                   onPressed: () => context.read<BrowserBloc>().add(
                     BrowserRefresh(activeTab.id),
@@ -109,21 +145,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   ),
                 ),
               ),
-              // PopupMenuButton<String>(
-              //   onSelected: (value) {
-              //     // Handle menu options
-              //   },
-              //   itemBuilder: (BuildContext context) {
-              //     return {'History', 'Bookmarks', 'Settings'}.map((
-              //       String choice,
-              //     ) {
-              //       return PopupMenuItem<String>(
-              //         value: choice,
-              //         child: Text(choice),
-              //       );
-              //     }).toList();
-              //   },
-              // ),
             ],
           ),
           body: activeTab == null

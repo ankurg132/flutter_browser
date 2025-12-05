@@ -17,7 +17,6 @@ class BrowserTabsScreen extends StatelessWidget {
             icon: const Icon(Icons.add),
             onPressed: () {
               context.read<BrowserBloc>().add(const BrowserAddTab());
-              Navigator.pop(context);
             },
           ),
         ],
@@ -40,7 +39,6 @@ class BrowserTabsScreen extends StatelessWidget {
               return InkWell(
                 onTap: () {
                   context.read<BrowserBloc>().add(BrowserSetActiveTab(tab.id));
-                  Navigator.pop(context);
                 },
                 child: Container(
                   decoration: BoxDecoration(

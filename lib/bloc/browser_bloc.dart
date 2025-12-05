@@ -9,11 +9,15 @@ import 'package:magtapp/bloc/browser_state.dart';
 import 'package:magtapp/models/browser_model.dart';
 import 'package:magtapp/services/offline_service.dart';
 
+import 'package:magtapp/repositories/file_repository.dart';
+
 class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
   final OfflineService _offlineService;
+  final FileRepository _fileRepository;
 
-  BrowserBloc({OfflineService? offlineService})
+  BrowserBloc({OfflineService? offlineService, FileRepository? fileRepository})
     : _offlineService = offlineService ?? OfflineService(),
+      _fileRepository = fileRepository ?? FileRepository(),
       super(const BrowserState()) {
     on<BrowserAddTab>(_onAddTab);
     on<BrowserCloseTab>(_onCloseTab);
@@ -24,6 +28,7 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
     on<BrowserGoBack>(_onGoBack);
     on<BrowserGoForward>(_onGoForward);
     on<BrowserRefresh>(_onRefresh);
+    on<BrowserDownloadFile>(_onDownloadFile);
 
     // Initialize with one tab
     add(const BrowserAddTab(url: 'https://www.google.com'));
@@ -89,9 +94,20 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
     Emitter<BrowserState> emit,
   ) async {
     final tab = state.tabs.firstWhere((t) => t.id == event.id);
-    String url = event.url;
-    if (!url.startsWith('http')) {
-      url = 'https://$url';
+    String url = event.url.trim();
+
+    // Simple heuristic to determine if it's a URL or a search query
+    bool isUrl = false;
+    if (!url.contains(' ') && url.contains('.')) {
+      isUrl = true;
+    }
+
+    if (isUrl) {
+      if (!url.startsWith('http')) {
+        url = 'https://$url';
+      }
+    } else {
+      url = 'https://www.google.com/search?q=${Uri.encodeComponent(url)}';
     }
 
     final isOffline = await _offlineService.isOffline();
@@ -143,6 +159,11 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
       updatedTabs[tabIndex] = updatedTab;
       emit(state.copyWith(tabs: updatedTabs));
 
+      // Save history
+      if (event.url.isNotEmpty && event.url != 'about:blank') {
+        await _offlineService.saveHistory(event.url, event.title);
+      }
+
       // Cache page content if online
       if (!(await _offlineService.isOffline())) {
         final controller = state.tabs[tabIndex].controller;
@@ -188,6 +209,28 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
     tab.controller?.reload();
   }
 
+  Future<void> _onDownloadFile(
+    BrowserDownloadFile event,
+    Emitter<BrowserState> emit,
+  ) async {
+    emit(state.copyWith(message: 'Downloading ${event.suggestedFilename}...'));
+
+    final path = await _fileRepository.downloadFile(
+      event.url,
+      event.suggestedFilename,
+    );
+
+    if (path != null) {
+      emit(
+        state.copyWith(
+          message: 'Download complete: ${event.suggestedFilename}',
+        ),
+      );
+    } else {
+      emit(state.copyWith(message: 'Download failed'));
+    }
+  }
+
   Future<void> _initializeController(BrowserTab tab) async {
     late final PlatformWebViewControllerCreationParams params;
     if (WebViewPlatform.instance is WebKitWebViewPlatform) {
@@ -231,6 +274,25 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
             // Handle error
           },
           onNavigationRequest: (NavigationRequest request) {
+            final uri = Uri.parse(request.url);
+            final path = uri.path.toLowerCase();
+
+            if (path.endsWith('.mp4') ||
+                path.endsWith('.mp3') ||
+                path.endsWith('.pdf') ||
+                path.endsWith('.zip') ||
+                path.endsWith('.apk') ||
+                path.endsWith('.png') ||
+                path.endsWith('.jpg') ||
+                path.endsWith('.jpeg')) {
+              add(
+                BrowserDownloadFile(
+                  url: request.url,
+                  suggestedFilename: path.split('/').last,
+                ),
+              );
+              return NavigationDecision.prevent;
+            }
             return NavigationDecision.navigate;
           },
         ),

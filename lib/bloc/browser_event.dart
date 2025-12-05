@@ -88,3 +88,31 @@ class BrowserRefresh extends BrowserEvent {
   @override
   List<Object> get props => [id];
 }
+
+class BrowserDownloadFile extends BrowserEvent {
+  final String url;
+  final String suggestedFilename;
+  final String userAgent;
+  final String contentDisposition;
+  final String mimeType;
+  final int contentLength;
+
+  const BrowserDownloadFile({
+    required this.url,
+    this.suggestedFilename = '',
+    this.userAgent = '',
+    this.contentDisposition = '',
+    this.mimeType = '',
+    this.contentLength = 0,
+  });
+
+  @override
+  List<Object> get props => [
+    url,
+    suggestedFilename,
+    userAgent,
+    contentDisposition,
+    mimeType,
+    contentLength,
+  ];
+}

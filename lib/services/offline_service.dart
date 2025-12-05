@@ -1,9 +1,10 @@
 import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
+import 'package:magtapp/services/database_service.dart';
 
 class OfflineService {
   final Connectivity _connectivity = Connectivity();
@@ -26,10 +27,27 @@ class OfflineService {
       final file = File('${directory.path}/$fileName.html');
       await file.writeAsString(html);
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('page_$fileName', DateTime.now().toIso8601String());
+      // Save metadata to DB
+      await _databaseService.insertSavedPage({
+        'url': url,
+        'title': 'Offline Page', // We might want to pass title here
+        'path': file.path,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
     } catch (e) {
       print('Error saving page content: $e');
+    }
+  }
+
+  Future<void> saveHistory(String url, String title) async {
+    try {
+      await _databaseService.insertHistory({
+        'url': url,
+        'title': title,
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+      });
+    } catch (e) {
+      print('Error saving history: $e');
     }
   }
 
@@ -47,11 +65,13 @@ class OfflineService {
     return null;
   }
 
+  final DatabaseService _databaseService = DatabaseService();
+
   Future<void> saveAIResult(String url, String type, String content) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final fileName = _getFileName(url);
-      await prefs.setString('ai_${type}_$fileName', content);
+      final key = 'ai_${type}_$fileName';
+      await _databaseService.insertAICache(key, content);
     } catch (e) {
       print('Error saving AI result: $e');
     }
@@ -59,9 +79,9 @@ class OfflineService {
 
   Future<String?> getAIResult(String url, String type) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
       final fileName = _getFileName(url);
-      return prefs.getString('ai_${type}_$fileName');
+      final key = 'ai_${type}_$fileName';
+      return await _databaseService.getAICache(key);
     } catch (e) {
       print('Error getting AI result: $e');
     }

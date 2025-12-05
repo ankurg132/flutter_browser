@@ -7,9 +7,14 @@ import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
 import 'package:magtapp/bloc/browser_event.dart';
 import 'package:magtapp/bloc/browser_state.dart';
 import 'package:magtapp/models/browser_model.dart';
+import 'package:magtapp/services/offline_service.dart';
 
 class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
-  BrowserBloc() : super(const BrowserState()) {
+  final OfflineService _offlineService;
+
+  BrowserBloc({OfflineService? offlineService})
+    : _offlineService = offlineService ?? OfflineService(),
+      super(const BrowserState()) {
     on<BrowserAddTab>(_onAddTab);
     on<BrowserCloseTab>(_onCloseTab);
     on<BrowserSetActiveTab>(_onSetActiveTab);
@@ -79,14 +84,33 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
     }
   }
 
-  void _onLoadUrl(BrowserLoadUrl event, Emitter<BrowserState> emit) {
+  Future<void> _onLoadUrl(
+    BrowserLoadUrl event,
+    Emitter<BrowserState> emit,
+  ) async {
     final tab = state.tabs.firstWhere((t) => t.id == event.id);
     String url = event.url;
     if (!url.startsWith('http')) {
       url = 'https://$url';
     }
-    tab.controller?.loadRequest(Uri.parse(url));
-    // State update will happen via PageStarted/Finished events
+
+    final isOffline = await _offlineService.isOffline();
+    if (isOffline) {
+      final cachedContent = await _offlineService.getPageContent(url);
+      if (cachedContent != null) {
+        tab.controller?.loadHtmlString(cachedContent, baseUrl: url);
+        // Manually trigger page finished since loadHtmlString might not trigger it exactly as we want for "url" tracking
+        // But typically it does trigger navigation events.
+        // We might need to handle the "Offline Mode" indicator here or in the UI based on connectivity.
+      } else {
+        // Load error page or show snackbar (handled in UI usually, but we can load a data URI)
+        tab.controller?.loadHtmlString(
+          '<html><body><h1>Offline</h1><p>No cached version available for this page.</p></body></html>',
+        );
+      }
+    } else {
+      tab.controller?.loadRequest(Uri.parse(url));
+    }
   }
 
   void _onPageStarted(BrowserPageStarted event, Emitter<BrowserState> emit) {
@@ -102,7 +126,10 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
     }
   }
 
-  void _onPageFinished(BrowserPageFinished event, Emitter<BrowserState> emit) {
+  Future<void> _onPageFinished(
+    BrowserPageFinished event,
+    Emitter<BrowserState> emit,
+  ) async {
     final tabIndex = state.tabs.indexWhere((t) => t.id == event.id);
     if (tabIndex != -1) {
       final updatedTab = state.tabs[tabIndex].copyWith(
@@ -115,6 +142,34 @@ class BrowserBloc extends Bloc<BrowserEvent, BrowserState> {
       final updatedTabs = List<BrowserTab>.from(state.tabs);
       updatedTabs[tabIndex] = updatedTab;
       emit(state.copyWith(tabs: updatedTabs));
+
+      // Cache page content if online
+      if (!(await _offlineService.isOffline())) {
+        final controller = state.tabs[tabIndex].controller;
+        if (controller != null) {
+          try {
+            // Get HTML content. Note: getting full HTML via JS might be heavy or restricted.
+            // document.documentElement.outerHTML is a common way.
+            final html = await controller.runJavaScriptReturningResult(
+              'document.documentElement.outerHTML',
+            );
+            String htmlString = html.toString();
+            // Cleanup quotes if needed (runJavaScriptReturningResult returns JSON encoded string)
+            if (htmlString.startsWith('"') && htmlString.endsWith('"')) {
+              htmlString = htmlString.substring(1, htmlString.length - 1);
+            }
+            // Unescape standard JSON escapes
+            htmlString = htmlString
+                .replaceAll('\\n', '\n')
+                .replaceAll('\\"', '"')
+                .replaceAll('\\t', '\t');
+
+            await _offlineService.savePageContent(event.url, htmlString);
+          } catch (e) {
+            print('Failed to cache page: $e');
+          }
+        }
+      }
     }
   }
 

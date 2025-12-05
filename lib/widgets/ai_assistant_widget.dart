@@ -37,7 +37,9 @@ class _AIAssistantWidgetState extends State<AIAssistantWidget>
     if (widget.onGetPageContent != null) {
       final content = await widget.onGetPageContent!();
       if (mounted) {
-        context.read<AIBloc>().add(AISummarizePage(content));
+        context.read<AIBloc>().add(
+          AISummarizePage(content, widget.currentUrl ?? ''),
+        );
       }
     }
   }
@@ -47,7 +49,7 @@ class _AIAssistantWidgetState extends State<AIAssistantWidget>
       final content = await widget.onGetPageContent!();
       if (mounted) {
         context.read<AIBloc>().add(
-          AITranslatePage(content, 'Hindi'),
+          AITranslatePage(content, 'Hindi', widget.currentUrl ?? ''),
         ); // Default to Hindi for now
       }
     }

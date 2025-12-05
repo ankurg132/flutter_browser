@@ -46,6 +46,10 @@ dependencies:
   flutter_markdown: ^0.7.7+1
   dart_openai: ^6.1.1
   flutter_dotenv: ^6.0.0
+  share_plus: ^12.0.1
+  path_provider: ^2.1.5
+  shared_preferences: ^2.5.3
+  connectivity_plus: ^7.0.0
 
 dev_dependencies:
   flutter_test:

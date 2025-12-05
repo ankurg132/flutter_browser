@@ -5,7 +5,13 @@ import 'package:magtapp/bloc/browser_bloc.dart';
 import 'package:magtapp/bloc/browser_event.dart';
 import 'package:magtapp/bloc/browser_state.dart';
 import 'package:magtapp/screens/browser/browser_tabs_screen.dart';
-import 'package:magtapp/widgets/ai_assistant_widget.dart';
+
+import 'package:magtapp/widgets/collapsible_summary_panel.dart';
+import 'package:magtapp/bloc/ai/ai_bloc.dart';
+import 'package:magtapp/bloc/ai/ai_state.dart';
+import 'package:magtapp/bloc/ai/ai_event.dart';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 class BrowserScreen extends StatefulWidget {
   const BrowserScreen({super.key});
@@ -34,10 +40,14 @@ class _BrowserScreenState extends State<BrowserScreen> {
     return BlocConsumer<BrowserBloc, BrowserState>(
       listener: (context, state) {
         final activeTab = state.activeTab;
-        if (activeTab != null && _urlController.text != activeTab.url) {
-          if (!activeTab.isLoading) {
-            _urlController.text = activeTab.url;
+        if (activeTab != null) {
+          if (_urlController.text != activeTab.url) {
+            if (!activeTab.isLoading) {
+              _urlController.text = activeTab.url;
+            }
           }
+          // Load summary for the active tab
+          context.read<AIBloc>().add(AILoadSummary(activeTab.url));
         }
       },
       builder: (context, state) {
@@ -78,41 +88,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
             actions: [
               if (activeTab != null)
                 IconButton(
-                  icon: const Icon(Icons.auto_awesome),
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => AIAssistantWidget(
-                        currentUrl: activeTab.url,
-                        onGetPageContent: () async {
-                          if (activeTab.controller != null) {
-                            final result = await activeTab.controller!
-                                .runJavaScriptReturningResult(
-                                  'document.body.innerText',
-                                );
-                            // Result is usually a JSON string, so we might need to unquote it
-                            // But for simple text extraction, toString() might suffice or need jsonDecode
-                            // runJavaScriptReturningResult returns "string content" (quoted)
-                            String text = result.toString();
-                            if (text.startsWith('"') && text.endsWith('"')) {
-                              text = text.substring(1, text.length - 1);
-                            }
-                            // Unescape newlines and other chars if needed, but basic cleanup:
-                            text = text
-                                .replaceAll('\\n', '\n')
-                                .replaceAll('\\"', '"');
-                            return text;
-                          }
-                          return '';
-                        },
-                      ),
-                    );
-                  },
-                ),
-              if (activeTab != null)
-                IconButton(
                   icon: const Icon(Icons.refresh),
                   onPressed: () => context.read<BrowserBloc>().add(
                     BrowserRefresh(activeTab.id),
@@ -147,19 +122,120 @@ class _BrowserScreenState extends State<BrowserScreen> {
               ),
             ],
           ),
-          body: activeTab == null
-              ? const Center(child: Text('No tabs open'))
-              : Column(
-                  children: [
-                    if (activeTab.isLoading)
-                      const LinearProgressIndicator(minHeight: 2),
-                    Expanded(
-                      child: activeTab.controller != null
-                          ? WebViewWidget(controller: activeTab.controller!)
-                          : const Center(child: CircularProgressIndicator()),
-                    ),
-                  ],
-                ),
+          body: Column(
+            children: [
+              StreamBuilder<List<ConnectivityResult>>(
+                stream: Connectivity().onConnectivityChanged,
+                builder: (context, snapshot) {
+                  final results = snapshot.data;
+                  if (results != null &&
+                      results.contains(ConnectivityResult.none)) {
+                    return Container(
+                      color: Colors.red,
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(4),
+                      child: const Text(
+                        'Offline Mode',
+                        style: TextStyle(color: Colors.white, fontSize: 12),
+                        textAlign: TextAlign.center,
+                      ),
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
+              Expanded(
+                child: activeTab == null
+                    ? const Center(child: Text('No tabs open'))
+                    : Column(
+                        children: [
+                          if (activeTab.isLoading)
+                            const LinearProgressIndicator(minHeight: 2),
+                          Expanded(
+                            child: Stack(
+                              children: [
+                                activeTab.controller != null
+                                    ? WebViewWidget(
+                                        controller: activeTab.controller!,
+                                      )
+                                    : const Center(
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
+                                  child: BlocBuilder<AIBloc, AIState>(
+                                    builder: (context, aiState) {
+                                      return CollapsibleSummaryPanel(
+                                        summary:
+                                            aiState.summary ??
+                                            aiState.result ??
+                                            '',
+                                        translation: aiState.translation,
+                                        originalText:
+                                            '', // We need to pass original text here if we want word count reduction
+                                        isLoading:
+                                            aiState.status == AIStatus.loading,
+                                        error:
+                                            aiState.status == AIStatus.failure
+                                            ? aiState.error
+                                            : null,
+                                        onSummarize: () async {
+                                          if (activeTab.controller != null) {
+                                            final result = await activeTab
+                                                .controller!
+                                                .runJavaScriptReturningResult(
+                                                  'document.body.innerText',
+                                                );
+                                            String text = result.toString();
+                                            if (text.startsWith('"') &&
+                                                text.endsWith('"')) {
+                                              text = text.substring(
+                                                1,
+                                                text.length - 1,
+                                              );
+                                            }
+                                            text = text
+                                                .replaceAll('\\n', '\n')
+                                                .replaceAll('\\"', '"');
+
+                                            if (context.mounted) {
+                                              context.read<AIBloc>().add(
+                                                AISummarizePage(
+                                                  text,
+                                                  activeTab.url,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                        onTranslate: (language) {
+                                          final textToTranslate =
+                                              aiState.summary ?? aiState.result;
+                                          if (textToTranslate != null &&
+                                              textToTranslate.isNotEmpty) {
+                                            context.read<AIBloc>().add(
+                                              AITranslatePage(
+                                                textToTranslate,
+                                                language,
+                                                activeTab.url,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ],
+          ),
           bottomNavigationBar: BottomAppBar(
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,

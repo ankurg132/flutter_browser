@@ -1,5 +1,8 @@
 name: Flutter Build
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [ "main" ]
@@ -66,3 +69,20 @@ jobs:
         with:
           name: release-ios
           path: build/ios/iphoneos/Runner.app
+
+      # 1. Zip the iOS App (Required because Releases can only handle files, not folders)
+      - name: Zip iOS Build
+        run: |
+          cd build/ios/iphoneos
+          zip -r release-ios.zip Runner.app
+          echo "IOS_ZIP_PATH=build/ios/iphoneos/release-ios.zip" >> $GITHUB_ENV
+
+      # 2. Create Release and Upload Files
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            ${{ env.IOS_ZIP_PATH }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN }}

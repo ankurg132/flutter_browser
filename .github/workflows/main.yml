@@ -1,49 +1,65 @@
+name: Flutter Build
+
 on:
-  pull_request:
-    branches:
-      - main
-      - master
   push:
-    branches:
-      - main
-      - master
-      - develop
-name: "Build & Release"
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
 jobs:
   build:
-    name: Build & Release
+    name: Build APK and IPA
+    # macOS is required to build iOS apps
     runs-on: macos-latest
+
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-java@v3
+      # 1. Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Set up Java for Android build
+      - name: Set up Java
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: '12'
-      - uses: subosito/flutter-action@v2
+          java-version: '17'
+
+      # 3. Set up Flutter
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.38.4' # Or your specific version
           channel: 'stable'
-          architecture: x64
+          cache: true
 
-      - run: flutter build apk --release --split-per-abi
-      - run: |
-          flutter build ios --no-codesign
-          cd build/ios/iphoneos
-          mkdir Payload
-          cd Payload
-          ln -s ../Runner.app
-          cd ..
-          zip -r app.ipa Payload
-      - name: Push to Releases
-        uses: ncipollo/release-action@v1
+      # 4. Install dependencies
+      - name: Install dependencies
+        run: flutter pub get
+
+      # 5. Run static analysis (Optional but recommended)
+      - name: Analyze code
+        run: flutter analyze
+
+      # 6. Build Android APK
+      - name: Build Android APK
+        run: flutter build apk --release
+
+      # 7. Build iOS (No-codesign for testing)
+      # Note: Building for iOS on CI usually requires --no-codesign 
+      # unless you have uploaded p12/mobileprovision files.
+      - name: Build iOS IPA
+        run: flutter build ios --release --no-codesign
+
+      # 8. Upload Android Artifact
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
         with:
-          artifacts: "build/app/outputs/apk/release/*,build/ios/iphoneos/app.ipa"
-          tag: v1.0.${{ github.run_number }}
-          token: ${{ secrets.TOKEN }}
+          name: release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
 
-
-
-
-
-
-# push to master, main, develop
-# pull request on main master
+      # 9. Upload iOS Artifact
+      - name: Upload iOS Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-ios
+          path: build/ios/iphoneos/Runner.app

@@ -87,3 +87,12 @@ jobs:
             ${{ env.IOS_ZIP_PATH }}
         env:
           GITHUB_TOKEN: ${{ secrets.TOKEN }}
+
+      - name: Build Web
+        run: flutter build web --release --base-href "/flutter_browser/"
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.TOKEN }}
+          publish_dir: ./build/web

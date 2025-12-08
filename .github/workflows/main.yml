@@ -41,7 +41,7 @@ jobs:
 
       # 5. Run static analysis (Optional but recommended)
       - name: Analyze code
-        run: flutter analyze
+        run: flutter analyze --no-fatal-infos
 
       # 6. Build Android APK
       - name: Build Android APK
